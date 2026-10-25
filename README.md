@@ -1,25 +1,41 @@
-<div align="center">
-    <a href="https://github.com/rvp-group/mad-icp/actions/workflows/pythonbuild.yml"><img src="https://github.com/rvp-group/mad-icp/actions/workflows/pythonbuild.yml/badge.svg"/></a>
-    <a href="https://github.com/rvp-group/mad-icp"><img alt="GitHub Repo stars" src="https://img.shields.io/github/stars/rvp-group/mad-icp"></a>
-    <a href="https://pypi.org/project/mad-icp/"><img alt="PyPI - Version" src="https://img.shields.io/pypi/v/mad-icp"></a>
-    <a href="https://pypi.org/project/mad-icp/"><img alt="PyPI - Downloads" src="https://img.shields.io/pypi/dm/mad-icp"></a>
-    <h1>MAD-ICP</h1>
-    <h3>It Is All About Matching Data -- Robust and Informed LiDAR Odometry</h3>
-    <h3>Accepted <a href="https://ieeexplore.ieee.org/document/10669999">RA-L</a> 2024</h3>
-    <h3>
-        <a href="https://github.com/rvp-group/mad-icp/blob/main/paper_with_supplementary.pdf">Preprint</a>
-    </h3>
-    <div align="center">
-        <a href="https://github.com/rvp-group/mad-icp"><img src="https://github.com/rvp-group/mad-icp/blob/main/mad-icp.gif?raw=true"/></a>   
-    </div>
-    <br />   
-</div>
+# This work is an extension of MAD-ICP
+
+This repository extends <a href="https://github.com/rvp-group/mad-icp#">MAD-ICP</a>, the original LiDAR odometry pipeline. Please refer to the original repository for the base project and its publication.
+
+## What's new
+
+The main addition of this fork is a **pluggable velocity estimator**: instead of the single Gauss-Newton estimator used by the original MAD-ICP, you can now choose among three solvers via the `solver` key in [`mad_params.py`](mad_icp/configurations/mad_params.py):
+
+| `solver` value | Description |
+| -------------- | ----------- |
+| `"classic"` | Original Gauss-Newton velocity estimator — always available, no extra dependencies. |
+| `"gsolver"` | Factor-graph estimator based on Gaussian Processes, solved with a distributed Gaussian Belief Propagation (GBP) solver ([gsolver](https://github.com/rvp-group/gsolver)). |
+| `"gtsam"` | Same GP factor-graph formulation, but solved with a centralized Gauss-Newton optimizer using [GTSAM](https://github.com/borglab/gtsam). |
+
+The `"gsolver"` and `"gtsam"` solvers are only available if the package is built with `-DUSE_GP_VEL_ESTIMATOR=ON` (see [Install using `pip`](#install-using-pip)); with the base install only `"classic"` is available.
+
+Alongside `solver`, a few more entries in `mad_params.py` control the factor-graph solvers:
+- `qc_default`: intensity of the White-Noise-On-Acceleration (WNOA) process noise (used when no ground truth is provided to calibrate it).
+- `prior_cov`: covariance of the prior factor on each pose; leave empty/`None` to use the real per-pose ICP covariance instead.
+- `gn_iterations`: number of GN/GBP iterations run on the factor graph.
+- `gt_path`: path to a KITTI ground-truth file used to calibrate `Qc`; leave empty to use the default.
 
 # Install using `pip`
-You can download/install MAD-ICP using `pip`
-```bash
-pip install mad-icp
-```
+
+You can install this package directly with `pip` from the repository root. The build compiles the C++/pybind11 extension via CMake, so no extra manual build step is needed.
+
+There are two installation modes, depending on which velocity estimator you want to use:
+
+- **Base install** — uses the classic Gauss-Newton velocity estimator, no extra dependencies:
+  ```bash
+  pip install -e .
+  ```
+- **GP velocity estimator (gsolver) install** — enables the factor-graph-based velocity estimator, which fetches and builds [gsolver](https://github.com/rvp-group/gsolver) automatically:
+  ```bash
+  pip install -e . -Ccmake.args="-DUSE_GP_VEL_ESTIMATOR=ON"
+  ```
+
+The `-e` flag installs the package in editable mode, so changes to the Python sources are picked up without reinstalling. Omit it for a regular (non-editable) install.
 
 # Usage
 
@@ -39,64 +55,3 @@ mad_icp --data-path /input_dir/ \
 Our runner directly saves the odometry estimate file in KITTI format (homogenous matrix row-major 12 scalars); soon, we will provide more available formats like TUM.
 
 Our pipeline is `anytime realtime`! You can play with parameters `num_keyframes` and `num_cores` and, if you have enough _computation capacity_, we suggest increasing these (we run demo/experiments with `num_keyframes=16` and `num_cores=16`).
-
-## Data associtation and registration tools
-If you want to use our MAD-tree to perform nearest neighbor or use MAD-ICP to perform registration between two point clouds, <b>[here few easy examples](https://github.com/rvp-group/mad-icp/tree/main/mad_icp/apps/utils/tools/README.md)</b>.
-
-
-____________________________________________________________________
-
-# Building from source
-
-Building is tested by our CI/CD pipeline for Ubuntu 20.04 and Ubuntu 22.04 (using g++).
-
-The following external dependencies are required.
-| Dependency   | Version(s) known to work |
-| ------------ | ------------------------ |
-| [Eigen](http://eigen.tuxfamily.org/index.php?title=Main_Page) | 3.3 |
-| [OpenMP](https://www.openmp.org/) |  |
-| [pybind11](https://pybind11.readthedocs.io/en/stable/) |  |
-| [yaml](https://github.com/jbeder/yaml-cpp) (optional for C++ apps) |  |
-
-If your system lacks any dependency (except for `OpenMP`) we download local copies using `FetchContent`.
-If you want to build and install the package, assuming you're inside the repository, you can use `pip` as follows:
-```bash
-pip install .
-```
-Moreover, you can build the C++ library (along with the pybinds) by typing:
-```bash
-mkdir build && cd build && cmake ../mad_icp && make -j
-```
-
-## Building and Running C++ Apps \[Optional\]
-If you want to avoid Python, we provide the `bin_runner` C++ executable (located in `mad_icp/apps/cpp_runners/bin_runner.cpp`) that accepts binary cloud format (KITTI, Mulran, etc.).
-You can build the executable using
-```bash
-mkdir build && cd build && cmake -DCOMPILE_CPP_APPS=ON ../mad_icp && make -j
-```
-And run
-```bash
-cd build/apps/cpp_runners
-./bin_runner -data_path /path_to_bag_folder/ \
-             -estimate_path /path_to_estimate_folder/ \
-             -dataset_config ../../../mad_icp/configurations/datasets/kitti.cfg \
-             -mad_icp_config ../../../mad_icp/configurations/default.cfg 
-```
->[!IMPORTANT]
- >If running on the KITTI dataset, enable the flag `-kitti` for KITTI scan correction (not documented anywhere). We do not (currently) provide a viewer for this executable. 
-
-# What is missing?
-- ROS/ROS2 optional dependencies
-
-# Cite us
-If you use any of this code, please cite our <a href="https://ieeexplore.ieee.org/document/10669999">paper</a>:
-
-```
-@article{ferrari2024mad,
-  title={MAD-ICP: It Is All About Matching Data--Robust and Informed LiDAR Odometry},
-  author={Ferrari, Simone and Di Giammarino, Luca and Brizi, Leonardo and Grisetti, Giorgio},
-  journal={IEEE Robotics and Automation Letters},
-  year={2024},
-  doi={10.1109/LRA.2024.3456509}
-}
-```
